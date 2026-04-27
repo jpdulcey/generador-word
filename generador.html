@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Generador de documento</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    background: #f0f4f8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  .card {
+    background: white;
+    border-radius: 12px;
+    padding: 40px;
+    max-width: 520px;
+    width: 100%;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+    text-align: center;
+  }
+  .logo { font-size: 48px; margin-bottom: 16px; }
+  h1 { font-size: 20px; color: #1a2e4a; margin-bottom: 8px; }
+  .subtitulo { color: #5a6a7e; font-size: 14px; margin-bottom: 24px; }
+  .btn {
+    display: inline-block;
+    background: #1a56db;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 28px;
+    font-size: 15px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .btn:hover { background: #1447c0; }
+  .btn:disabled { background: #9ab3e8; cursor: not-allowed; }
+  .status { margin-top: 20px; font-size: 13px; color: #27ae60; min-height: 20px; }
+  .error { color: #c0392b; margin-top: 16px; font-size: 13px; }
+  .info-box {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-bottom: 24px;
+    text-align: left;
+  }
+  .info-row { font-size: 13px; color: #4a5568; margin-bottom: 5px; }
+  .info-row span { font-weight: 600; color: #1a2e4a; }
+  .cargando { color: #1a56db; margin-top: 12px; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">📄</div>
+  <h1>Descargar documento Word</h1>
+  <p class="subtitulo">Haz clic en el botón para generar y descargar el archivo de evaluación.</p>
+  <div class="info-box" id="infoBox"><span style="color:#9ab3e8">Cargando datos...</span></div>
+  <button class="btn" id="btnDescargar" onclick="generarWord()" disabled>⬇ Descargar Word</button>
+  <div class="cargando" id="cargando">Cargando librería...</div>
+  <div class="status" id="status"></div>
+  <div class="error" id="error"></div>
+</div>
+
+<script>
+// ── Leer parámetros robustamente ──────────────────────────────────────────────
+function getParams() {
+  const resultado = {};
+  // Tomamos todo lo que está después del ?
+  const query = window.location.search.substring(1);
+  if (!query) return resultado;
+  
+  // Separamos por & pero tenemos cuidado con los %26 dentro de valores
+  const partes = query.split("&");
+  for (let i = 0; i < partes.length; i++) {
+    const idx = partes[i].indexOf("=");
+    if (idx === -1) continue;
+    const clave = decodeURIComponent(partes[i].substring(0, idx));
+    const valor = decodeURIComponent(partes[i].substring(idx + 1));
+    resultado[clave] = valor;
+  }
+  return resultado;
+}
+
+const p = getParams();
+
+const tipo            = p["tipo"]            || "Evaluacion";
+const nordemp         = p["nordemp"]         || "";
+const nordest         = p["nordest"]         || "";
+const analista        = p["analista"]        || "";
+const monitor         = p["monitor"]         || "";
+const territorial     = p["territorial"]     || "";
+const establecimiento = p["establecimiento"] || "";
+const puntaje         = p["puntaje"]         || "";
+const resultado       = p["resultado"]       || "";
+const dias            = p["dias"]            || "";
+
+let observaciones = [];
+try {
+  const raw = p["observaciones"];
+  if (raw) observaciones = JSON.parse(raw);
+} catch(e) {
+  console.error("Error parseando observaciones:", e);
+}
+
+// ── Mostrar info ──────────────────────────────────────────────────────────────
+document.getElementById("infoBox").innerHTML = `
+  <div class="info-row">Tipo: <span>${tipo}</span></div>
+  <div class="info-row">NORDEST: <span>${nordest}</span> &nbsp;|&nbsp; NORDEMP: <span>${nordemp}</span></div>
+  <div class="info-row">Analista: <span>${analista}</span></div>
+  <div class="info-row">Monitor: <span>${monitor}</span></div>
+  <div class="info-row">Territorial: <span>${territorial}</span></div>
+  <div class="info-row">Establecimiento: <span>${establecimiento}</span></div>
+  <div class="info-row">Puntaje: <span>${puntaje}</span> &nbsp;|&nbsp; Resultado: <span>${resultado}</span></div>
+  ${dias ? `<div class="info-row">Días otorgados: <span>${dias}</span></div>` : ""}
+`;
+
+// ── Nombre archivo ────────────────────────────────────────────────────────────
+function limpiar(txt) {
+  return String(txt).trim().replace(/[\\/*?:"<>|]/g, "").replace(/\s+/g, "_");
+}
+const nombreArchivo = `${limpiar(tipo)}_${limpiar(nordemp)}_${limpiar(nordest)}_${limpiar(establecimiento)}.docx`;
+
+// ── Cargar docx.js ────────────────────────────────────────────────────────────
+const CDNS = [
+  "https://unpkg.com/docx@8.5.0/build/index.umd.js",
+  "https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js"
+];
+
+function cargarScript(url) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = url;
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+async function cargarLibreria() {
+  for (const cdn of CDNS) {
+    try {
+      await cargarScript(cdn);
+      if (window.docx) {
+        document.getElementById("cargando").textContent = "✅ Listo para descargar";
+        document.getElementById("btnDescargar").disabled = false;
+        return;
+      }
+    } catch(e) { /* intentar siguiente */ }
+  }
+  document.getElementById("cargando").textContent = "";
+  document.getElementById("error").textContent = "❌ No se pudo cargar la librería. Revisa tu conexión.";
+}
+
+cargarLibreria();
+
+// ── Generar Word ──────────────────────────────────────────────────────────────
+async function generarWord() {
+  const btn    = document.getElementById("btnDescargar");
+  const status = document.getElementById("status");
+  const error  = document.getElementById("error");
+
+  btn.disabled       = true;
+  status.textContent = "";
+  error.textContent  = "";
+  btn.textContent    = "Generando...";
+
+  try {
+    if (!window.docx) throw new Error("Librería no disponible.");
+    const { Document, Packer, Paragraph, TextRun, HeadingLevel } = window.docx;
+
+    const children = [];
+
+    // Título
+    children.push(new Paragraph({
+      text: `Resultado de Evaluación - ${tipo}`,
+      heading: HeadingLevel.HEADING_1
+    }));
+
+    // Fecha y datos
+    const ahora = new Date();
+    const fecha = ahora.toLocaleDateString("es-CO") + " " +
+                  ahora.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" });
+
+    [
+      `Fecha: ${fecha}`,
+      `Tipo: ${tipo}`,
+      `NORDEMP: ${nordemp}`,
+      `NORDEST: ${nordest}`,
+      `Analista: ${analista}`,
+      `Monitor: ${monitor}`,
+      `Territorial: ${territorial}`,
+      `Establecimiento: ${establecimiento}`
+    ].forEach(t => children.push(new Paragraph({ text: t })));
+
+    // Resumen
+    children.push(new Paragraph({ text: "Resumen", heading: HeadingLevel.HEADING_2 }));
+    children.push(new Paragraph({ text: `Puntaje final: ${puntaje}` }));
+    children.push(new Paragraph({ text: `Resultado: ${resultado}` }));
+    if (resultado === "ENVIAR CORREO" && dias)
+      children.push(new Paragraph({ text: `Días otorgados para responder: ${dias}` }));
+
+    // Observaciones
+    children.push(new Paragraph({
+      text: "Observaciones / Novedades registradas",
+      heading: HeadingLevel.HEADING_2
+    }));
+
+    if (!observaciones || observaciones.length === 0) {
+      children.push(new Paragraph({ text: "No se registraron observaciones." }));
+    } else {
+      // Ordenar — la colección de Power Apps usa Orden y Titulo con mayúscula
+      const ordenadas = [...observaciones].sort((a, b) => {
+        const oa = parseInt(a.Orden || a.orden || 0);
+        const ob = parseInt(b.Orden || b.orden || 0);
+        return oa - ob;
+      });
+
+      let tituloAct = null;
+
+      ordenadas.forEach(item => {
+        // Compatibilidad mayúsculas/minúsculas
+        const titulo    = item.Titulo    || item.titulo    || "";
+        const subtitulo = item.Subtitulo1|| item.subtitulo || item.Subtitulo || "";
+        const texto     = item.Texto     || item.texto     || "";
+
+        if (titulo !== tituloAct) {
+          children.push(new Paragraph({ text: titulo, heading: HeadingLevel.HEADING_3 }));
+          tituloAct = titulo;
+        }
+
+        children.push(new Paragraph({
+          children: [new TextRun({ text: subtitulo, bold: true })]
+        }));
+
+        if (texto) children.push(new Paragraph({ text: texto }));
+      });
+    }
+
+    // Crear y descargar
+    const doc  = new Document({ sections: [{ properties: {}, children }] });
+    const blob = await Packer.toBlob(doc);
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href = url;
+    a.download = nombreArchivo;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    status.textContent = `✅ Descargado: ${nombreArchivo}`;
+    btn.textContent    = "⬇ Descargar Word";
+    btn.disabled       = false;
+
+  } catch(err) {
+    error.textContent  = "Error: " + err.message;
+    btn.textContent    = "⬇ Descargar Word";
+    btn.disabled       = false;
+  }
+}
+</script>
+</body>
+</html>

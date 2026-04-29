@@ -124,7 +124,7 @@ document.getElementById("infoBox").innerHTML = `
 function limpiar(txt) {
   return String(txt).trim().replace(/[\\/*?:"<>|]/g, "").replace(/\s+/g, "_");
 }
-const nombreArchivo = `${limpiar(nordemp)}_${limpiar(nordest)}_${limpiar(establecimiento)}.docx`;
+const nombreArchivo = `${limpiar(tipo)}_${limpiar(nordemp)}_${limpiar(nordest)}_${limpiar(establecimiento)}.docx`;
 
 // ── Cargar docx.js ────────────────────────────────────────────────────────────
 const CDNS = [
